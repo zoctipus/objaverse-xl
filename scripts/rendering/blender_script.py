@@ -820,6 +820,7 @@ def render_object(
         # render the image
         render_path = os.path.join(output_dir, f"{i:03d}.png")
         scene.render.filepath = render_path
+        print("from blender: ", render_path)
         bpy.ops.render.render(write_still=True)
 
         # save camera RT matrix
