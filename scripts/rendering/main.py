@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import time
 import zipfile
+import shutil
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -99,7 +100,24 @@ def handle_found_object(
     Returns: True if the object was rendered successfully, False otherwise.
     """
     save_uid = get_uid_from_str(file_identifier)
+    render_output_dir = os.path.join(render_dir, save_uid)
     args = f"--object_path '{local_path}' --num_renders {num_renders}"
+
+    _, file_extension = os.path.splitext(local_path)
+
+    # Constructing destination path with the same file suffix as local_path
+    destination_path = f"datasets/download/{save_uid}{file_extension}"
+
+    # Ensure the destination directory exists
+    os.makedirs(os.path.dirname(destination_path), exist_ok=True)
+
+    # Copy the file to the new destination with the same suffix
+    try:
+        shutil.copy(local_path, destination_path)
+        print(f"File copied successfully to {destination_path}")
+    except Exception as e:
+        logger.error(f"Failed to copy the file: {e}")
+        return False
 
     # get the GPU to use for rendering
     using_gpu: bool = True
@@ -120,7 +138,9 @@ def handle_found_object(
         # get the target directory for the rendering job
         target_directory = os.path.join(temp_dir, save_uid)
         os.makedirs(target_directory, exist_ok=True)
-        args += f" --output_dir {target_directory}"
+        # args += f" --output_dir {target_directory}"
+        args += f" --output_dir {render_output_dir}"
+        
 
         # check for Linux / Ubuntu or MacOS
         if platform.system() == "Linux" and using_gpu:
@@ -140,7 +160,7 @@ def handle_found_object(
             args += " --only_northern_hemisphere"
 
         # get the command to run
-        command = f"objaverse-xl/scripts/rendering/blender-3.2.2-linux-x64/blender --background --python objaverse-xl/scripts/rendering/blender_script.py -- {args}"
+        command = f"scripts/rendering/blender-3.2.2-linux-x64/blender --background --python scripts/rendering/blender_script.py -- {args}"
         if using_gpu:
             command = f"export DISPLAY=:0.{gpu_i} && {command}"
 
@@ -339,7 +359,7 @@ def handle_missing_object(
 
 def get_example_objects() -> pd.DataFrame:
     """Returns a DataFrame of example objects to use for debugging."""
-    return pd.read_json("objaverse-xl/scripts/rendering/example-objects.json", orient="records")
+    return pd.read_json("scripts/rendering/example-objects.json", orient="records")
 
 
 def render_objects(

@@ -12,153 +12,6 @@ import bpy
 import numpy as np
 from mathutils import Matrix, Vector
 
-
-NONE_HEIGHLIGHT_COLOR = (0.8 , 0.8 , 0.8 , 0.5)
-HIGHLIGHT_COLOR = (1 , 1 , 0 , 0.6)
-
-def set_camera_from_3x4_RT_matrix(cam, rt_matrix):
-    # Ensure the RT matrix is a Blender Matrix for easier manipulation
-    rt_matrix = Matrix(rt_matrix)
-
-    # Convert the 3x4 RT matrix back to a 4x4 matrix
-    RT_extended = rt_matrix.to_4x4()
-
-    # The RT matrix represents the world-to-camera transformation, so we need its inverse
-    # to position the camera in the world correctly
-    cam.matrix_world = RT_extended.inverted()
-
-
-def remove_all_materials_from_all_objects_and_data():
-    # Iterate through all objects in the scene
-    for obj in bpy.data.objects:
-        # Clear materials from the object
-        if obj.type == 'MESH':
-            obj.data.materials.clear()
-
-    # Remove unused materials from Blender's data block
-    for mat in bpy.data.materials:
-        if mat.users == 0:
-            bpy.data.materials.remove(mat)
-
-
-def assign_material_and_set_alpha_to_all_objects(material_name, alpha_value = NONE_HEIGHLIGHT_COLOR[3]):
-    # Create or get the existing material
-    mat = bpy.data.materials.get(material_name)
-    if not mat:
-        mat = bpy.data.materials.new(name=material_name)
-        mat.use_nodes = True
-        if not mat.node_tree.nodes.get('Principled BSDF'):
-            mat.node_tree.nodes.clear()
-            bsdf = mat.node_tree.nodes.new('ShaderNodeBsdfPrincipled')
-            mat_output = mat.node_tree.nodes.new('ShaderNodeOutputMaterial')
-            mat.node_tree.links.new(bsdf.outputs['BSDF'], mat_output.inputs['Surface'])
-    
-    # Set the material's alpha value and blend method
-    bsdf = mat.node_tree.nodes.get('Principled BSDF')
-    bsdf.inputs['Alpha'].default_value = alpha_value
-    mat.blend_method = 'BLEND'
-    
-    # Iterate through all objects and assign the material
-    for obj in bpy.data.objects:
-        if obj.type == 'MESH':
-            if obj.data.materials:
-                obj.data.materials[0] = mat
-            else:
-                obj.data.materials.append(mat)
-
-
-def assign_highlight_material_without_delete(obj, name):
-    mat = bpy.data.materials.get(name)
-    if mat is None:
-        # Create material
-        mat = bpy.data.materials.new(name=name)
-        mat.use_nodes = True
-        bsdf = mat.node_tree.nodes.get('Principled BSDF')
-        if not bsdf:
-            # If the material does not have a Principled BSDF node, create one
-            mat.node_tree.nodes.clear()
-            bsdf = mat.node_tree.nodes.new('ShaderNodeBsdfPrincipled')
-        # bsdf.inputs['Base Color'].default_value = HIGHLIGHT_COLOR[0:3] + (1.0,)  # RGB + fully opaque for base color
-        bsdf.inputs['Alpha'].default_value = HIGHLIGHT_COLOR[3]  # Set alpha
-        mat.blend_method = 'BLEND'  # Set blend method for transparency
-
-        # Link BSDF to material output
-        mat_output = mat.node_tree.nodes.get('Material Output')
-        if not mat_output:
-            mat_output = mat.node_tree.nodes.new('ShaderNodeOutputMaterial')
-        mat.node_tree.links.new(bsdf.outputs['BSDF'], mat_output.inputs['Surface'])
-
-    # Assign it to object
-    if obj.data.materials:
-        # Assign to 1st material slot, keeping the previous material
-        temp_mat = obj.data.materials[0]
-        obj.data.materials[0] = mat
-        if temp_mat != mat:
-            obj.data.materials.append(temp_mat)
-    else:
-        # No slots
-        obj.data.materials.append(mat)
-
-
-def assign_highlight_material(obj, highlight_material_name, base_color=HIGHLIGHT_COLOR[0:3] + (1.0,), alpha_value=HIGHLIGHT_COLOR[3]):
-    # Create or get the highlight material
-    highlight_mat = bpy.data.materials.get(highlight_material_name)
-    if highlight_mat is None:
-        # If the material does not exist, create it and define nodes
-        highlight_mat = bpy.data.materials.new(name=highlight_material_name)
-        highlight_mat.use_nodes = True
-        bsdf = highlight_mat.node_tree.nodes.new('ShaderNodeBsdfPrincipled')
-        mat_output = highlight_mat.node_tree.nodes.new('ShaderNodeOutputMaterial')
-        highlight_mat.node_tree.links.new(bsdf.outputs['BSDF'], mat_output.inputs['Surface'])
-
-    # If material exists, try to get the 'Principled BSDF' node from it
-    bsdf = highlight_mat.node_tree.nodes.get('Principled BSDF')
-    if bsdf is None:
-        # If 'Principled BSDF' does not exist in an existing material, create it
-        highlight_mat.node_tree.nodes.clear()  # Clear any existing nodes first
-        bsdf = highlight_mat.node_tree.nodes.new('ShaderNodeBsdfPrincipled')
-        mat_output = highlight_mat.node_tree.nodes.new('ShaderNodeOutputMaterial')
-        highlight_mat.node_tree.links.new(bsdf.outputs['BSDF'], mat_output.inputs['Surface'])
-
-    # Set highlight material properties
-    bsdf.inputs['Base Color'].default_value = base_color
-    bsdf.inputs['Alpha'].default_value = alpha_value
-    highlight_mat.blend_method = 'BLEND'
-    
-    # Disable or delete the object's default material
-    obj.data.materials.clear()
-
-    # Assign the highlight material to the object
-    obj.data.materials.append(highlight_mat)
-
-def remove_material_from_obj(obj, name):
-    # This function searches for a material by name and removes it
-    for i, mat in enumerate(obj.data.materials):
-        if mat.name == name:
-            obj.data.materials.pop(index=i)
-            break
-
-def remove_material_from_data(material_name):
-    material = bpy.data.materials.get(material_name)
-    if material:
-        # Ensure the material is not used by any other objects
-        if material.users == 0:
-            bpy.data.materials.remove(material)
-        else:
-            print(f"Material '{material_name}' is still in use by other objects and cannot be removed from data.")
-
-def reassign_existing_material(obj, material_name):
-    # Get the existing material by name
-    existing_mat = bpy.data.materials.get(material_name)
-    if existing_mat:
-        # Clear any current materials
-        obj.data.materials.clear()
-        # Reassign the existing material
-        obj.data.materials.append(existing_mat)
-    else:
-        print(f"Material '{material_name}' not found.")
-
-
 IMPORT_FUNCTIONS: Dict[str, Callable] = {
     "obj": bpy.ops.import_scene.obj,
     "glb": bpy.ops.import_scene.gltf,
@@ -172,8 +25,6 @@ IMPORT_FUNCTIONS: Dict[str, Callable] = {
     "abc": bpy.ops.wm.alembic_import,
     "blend": bpy.ops.wm.append,
 }
-
-
 
 
 def reset_cameras() -> None:
@@ -958,71 +809,24 @@ def render_object(
 
     # randomize the lighting
     randomize_lighting()
-    
 
-    camera = bpy.data.objects["Camera"]
-    raw_output_dir = os.path.join(output_dir, "object_render")
-    os.makedirs(raw_output_dir, exist_ok=True)
-    # Generate camera positions and RT matrices
-    camera_rtmatrix = []
+    # render the images
     for i in range(num_renders):
-        camera = randomize_camera(only_northern_hemisphere=True)
-        bpy.context.view_layer.update()  # Update the scene
-        rt_matrix = get_3x4_RT_matrix_from_blender(camera)
-        camera_rtmatrix.append(rt_matrix)
+        # set camera
+        camera = randomize_camera(
+            only_northern_hemisphere=only_northern_hemisphere,
+        )
 
-    # Save RT matrices for later use
-    for i, rt_matrix in enumerate(camera_rtmatrix):
-        rt_matrix_path = os.path.join(raw_output_dir, f"{i:03d}_camera_rt.npy")
-        np.save(rt_matrix_path, rt_matrix)
-
-
-    '''FIRST PASS: RENDER ORIGINAL MATERIAL OBJECT'''
-    for i, rt_matrix in enumerate(camera_rtmatrix):
-        # Set camera
-        set_camera_from_3x4_RT_matrix(camera, rt_matrix)
-        # Render the image
-        render_path = os.path.join(raw_output_dir, f"{i:03d}_raw.png")
+        # render the image
+        render_path = os.path.join(output_dir, f"{i:03d}.png")
         scene.render.filepath = render_path
         print("from blender: ", render_path)
         bpy.ops.render.render(write_still=True)
 
-
-    '''SECOND PASS: RENDER TRANSPARENT MATERIAL OBJECT'''
-    remove_all_materials_from_all_objects_and_data()
-    assign_material_and_set_alpha_to_all_objects("DEFAULT_TRANSPARENT_MATERIAL")
-
-    for obj_index, obj in enumerate(bpy.context.scene.objects):
-        if obj.type == 'MESH':
-            assign_highlight_material(obj, "TEMPORARY_HIGHLIGHT_MATERIAL")
-            part_output_dir = os.path.join(output_dir, obj.name)
-            if not os.path.exists(part_output_dir):
-
-                os.makedirs(part_output_dir)
-
-            
-            # Render the images using saved camera positions
-            for i, rt_matrix in enumerate(camera_rtmatrix):
-
-                # Set camera using saved RT matrix
-                set_camera_from_3x4_RT_matrix(camera, rt_matrix)
-
-                # Render the image
-                render_path = os.path.join(part_output_dir, f"{i:03d}_transparent.png")
-
-                scene.render.filepath = render_path
-
-                print("from blender: ", render_path)
-
-                bpy.ops.render.render(write_still=True)
-
-            remove_material_from_obj(obj, "TEMPORARY_HIGHLIGHT_MATERIAL")
-            reassign_existing_material(obj, "DEFAULT_TRANSPARENT_MATERIAL")  # Assuming all objects get the same material reassigned
-
-    remove_material_from_data("TEMPORARY_HIGHLIGHT_MATERIAL")
-
-
-
+        # save camera RT matrix
+        rt_matrix = get_3x4_RT_matrix_from_blender(camera)
+        rt_matrix_path = os.path.join(output_dir, f"{i:03d}.npy")
+        np.save(rt_matrix_path, rt_matrix)
 
 
 if __name__ == "__main__":
@@ -1091,83 +895,6 @@ if __name__ == "__main__":
     render_object(
         object_file=args.object_path,
         num_renders=args.num_renders,
-        only_northern_hemisphere=args.only_nortPhern_hemisphere,
+        only_northern_hemisphere=args.only_northern_hemisphere,
         output_dir=args.output_dir,
     )
-
-# sys.argv = [
-#     '--',
-#     '--object_path', 'datasets/download/8a170083-0529-547f-90ec-ebc32eafe594.obj',
-#     '--num_renders', '12',
-#     '--output_dir', 'datasets/render/8a170083-0529-547f-90ec-ebc32eafe594/',
-#     '--engine', 'BLENDER_EEVEE'
-# ]
-
-# parser = argparse.ArgumentParser()
-# parser.add_argument(
-#     "--object_path",
-#     type=str,
-#     required=True,
-#     help="Path to the object file",
-# )
-# parser.add_argument(
-#     "--output_dir",
-#     type=str,
-#     required=True,
-#     help="Path to the directory where the rendered images and metadata will be saved.",
-# )
-# parser.add_argument(
-#     "--engine",
-#     type=str,
-#     default="BLENDER_EEVEE",
-#     choices=["CYCLES", "BLENDER_EEVEE"],
-# )
-# parser.add_argument(
-#     "--only_northern_hemisphere",
-#     action="store_true",
-#     help="Only render the northern hemisphere of the object.",
-#     default=False,
-# )
-# parser.add_argument(
-#     "--num_renders",
-#     type=int,
-#     default=12,
-#     help="Number of renders to save of the object.",
-# )
-# argv = sys.argv[sys.argv.index("--") + 1 :]
-# args = parser.parse_args(argv)
-
-# context = bpy.context
-# scene = context.scene
-# render = scene.render
-
-# # Set render settings
-# render.engine = args.engine
-# render.image_settings.file_format = "PNG"
-# render.image_settings.color_mode = "RGBA"
-# render.resolution_x = 512
-# render.resolution_y = 512
-# render.resolution_percentage = 100
-
-# # Set cycles settings
-# scene.cycles.device = "GPU"
-# scene.cycles.samples = 128
-# scene.cycles.diffuse_bounces = 1
-# scene.cycles.glossy_bounces = 1
-# scene.cycles.transparent_max_bounces = 3
-# scene.cycles.transmission_bounces = 3
-# scene.cycles.filter_width = 0.01
-# scene.cycles.use_denoising = True
-# scene.render.film_transparent = True
-# bpy.context.preferences.addons["cycles"].preferences.get_devices()
-# bpy.context.preferences.addons[
-#     "cycles"
-# ].preferences.compute_device_type = "CUDA"  # or "OPENCL"
-
-# # Render the images
-# render_object(
-#     object_file=args.object_path,
-#     num_renders=args.num_renders,
-#     only_northern_hemisphere=args.only_northern_hemisphere,
-#     output_dir=args.output_dir,
-# )
